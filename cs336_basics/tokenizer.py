@@ -77,7 +77,7 @@ class Tokenizer:
                     if self.merge_priority[tp] < priority:
                         priority = self.merge_priority[tp]
                         pos = [i]
-                    elif self.merge_priority == priority and i != pos[-1] + 1:
+                    elif self.merge_priority[tp] == priority and i != pos[-1] + 1:
                         pos.append(i)
             if len(pos) == 0:
                 break
