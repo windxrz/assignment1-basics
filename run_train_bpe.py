@@ -1,11 +1,10 @@
-import json
 import time
 
 import pickle as pkl
 
 import os
 
-from tests.adapters import run_train_bpe
+from cs336_basics.bpe import run_train_bpe
 
 
 def train_bpe(dataset, vocab_size=1000):    
