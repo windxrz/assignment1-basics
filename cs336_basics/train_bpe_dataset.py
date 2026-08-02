@@ -46,4 +46,4 @@ if __name__ == "__main__":
     vocab, merges, special_tokens, training_time = train_bpe("TinyStoriesV2-GPT4-train.txt", 10000, special_tokens)
     tmp = [(-len(ele), ele) for ele in vocab.values()]
     tmp = sorted(tmp)
-    print(tmp[:10])
+    print(tmp[:10], special_tokens, training_time)

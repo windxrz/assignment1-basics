@@ -1,4 +1,5 @@
 import regex as re
+import pickle as pkl
 from collections.abc import Iterable
 
 from cs336_basics.utils import GPT_PAT
@@ -28,41 +29,14 @@ class Tokenizer:
         
         self.mini_chunk_size = 4096
 
-    def _get_chunks(self, text: str, chunk_size: int = 40960):
-        l = len(text)
-
-        if self.special_tokens is None:
-            return set((0, l))
-
-        desired_num_chunks = l // chunk_size
-
-        chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]
-        chunk_boundaries[-1] = l
-
-        mini_chunk_size = 4096
-
-        for bi in range(1, len(chunk_boundaries) - 1):
-            initial_position = chunk_boundaries[bi]
-            left = initial_position
-            while True:
-                mini_chunk = text[left: left + mini_chunk_size]
-
-                if mini_chunk == "":
-                    chunk_boundaries[bi] = l
-                    break
-
-                pattern = re.compile('|'.join([re.escape(token) for token in self.special_tokens]))
-                found_at = pattern.search(mini_chunk)
-                if found_at is not None:
-                    chunk_boundaries[bi] = initial_position + found_at.start()
-                    break
-                initial_position += mini_chunk_size
-
-        return sorted(set(chunk_boundaries))
-    
     def from_files(self, vocab_filepath, merges_filepath, special_tokens=None):
-        pass
-    
+        with open(vocab_filepath, "rb") as f:
+            res = pkl.loads(f.read())
+            vocab = res["vocab"]
+            merges = res["merges"]
+            f.close()
+        self.__init__(vocab, merges, special_tokens)
+
     def _encode_word(self, word: str) -> list[int]:
         word_byte = word.encode("utf8")
         tmp = tuple([word_byte[i: i+1] for i in range(len(word_byte))])
