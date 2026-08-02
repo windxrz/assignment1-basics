@@ -7,7 +7,7 @@ import os
 from cs336_basics.train_bpe import run_train_bpe
 
 
-def train_bpe(dataset, vocab_size=1000):    
+def train_bpe(dataset, vocab_size, special_tokens):    
     output_filename = os.path.join("output", f"{dataset}_vocab_size_{vocab_size}_BPE.pkl")
     
     if not os.path.exists(output_filename):
@@ -17,7 +17,7 @@ def train_bpe(dataset, vocab_size=1000):
         vocab, merges = run_train_bpe(
             input_path=input_path,
             vocab_size=vocab_size,
-            special_tokens=["<|endoftext|>"],
+            special_tokens=special_tokens,
         )
         end_time = time.time()
         training_time = end_time - start_time
@@ -26,7 +26,8 @@ def train_bpe(dataset, vocab_size=1000):
             pkl.dump({
                 "time": training_time,
                 "vocab": vocab,
-                "merges": merges
+                "merges": merges,
+                "special_tokens": special_tokens,
             }, f)
             f.close()
     else:
@@ -35,12 +36,14 @@ def train_bpe(dataset, vocab_size=1000):
             vocab = res["vocab"]
             merges = res["merges"]
             training_time = res["time"]
+            special_tokens = res["special_tokens"]
             f.close()
-    return vocab, merges, training_time
+    return vocab, merges, special_tokens, training_time
 
 
 if __name__ == "__main__":
-    vocab, merges, training_time = train_bpe("TinyStoriesV2-GPT4-train.txt", 10000)
+    special_tokens = ["<|endoftext|>"]
+    vocab, merges, special_tokens, training_time = train_bpe("TinyStoriesV2-GPT4-train.txt", 10000, special_tokens)
     tmp = [(-len(ele), ele) for ele in vocab.values()]
     tmp = sorted(tmp)
     print(tmp[:10])
