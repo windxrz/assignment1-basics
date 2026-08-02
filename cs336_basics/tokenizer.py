@@ -5,9 +5,11 @@ class Tokenizer:
     def __init__(self, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], special_tokens: list[str] | None = None):
         self.vocab = vocab
         self.merges = merges
-        self.special_tokens = special_tokens
+        self.special_tokens = None
         self.special_tokens_bytes = None
         if special_tokens is not None:
+            special_tokens = sorted(special_tokens, key=lambda x: -len(x))
+            self.special_tokens = special_tokens
             self.special_tokens_bytes = [ele.encode("utf8") for ele in special_tokens]
             vocab_list = vocab.values()
             for ele in self.special_tokens_bytes:
@@ -17,7 +19,9 @@ class Tokenizer:
         self.vocab_inv = {}
         for k, v in self.vocab.items():
             self.vocab_inv[v] = k
-    
+        
+        self.mini_chunk_size = 4096
+
     def _get_chunks(self, text: str, chunk_size: int = 40960):
         l = len(text)
 
@@ -70,7 +74,15 @@ class Tokenizer:
         res = []
         for ele in tmp:
             res.append(self.vocab_inv[ele])
-        return res   
+        return res
+
+    def _encode_chunk(self, chunk: str) -> list[int]:
+        res = []
+        PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+        for m in re.finditer(PAT, chunk):
+            word = m.group()
+            res.extend(self._encode_word(word))
+        return res
 
     def encode(self, text: str) -> list[int]:
         res = []
@@ -87,16 +99,28 @@ class Tokenizer:
         else:
             chunks = [text]
         for i, chunk in enumerate(chunks):
-            PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-            for m in re.finditer(PAT, chunk):
-                word = m.group()
-                res.extend(self._encode_word(word))
+            res.extend(self._encode_chunk(chunk))
             if i < len(res_special):
                 res.append(res_special[i])
         return res
     
     def encode_iterable(self, iterable: Iterable[str]) -> Iterable[int]:
-        pass
+        str = ""
+        for s in iterable:
+            str += s
+            if self.special_tokens is not None and len(str) % self.mini_chunk_size == 0:
+                pattern = re.compile('|'.join([re.escape(token) for token in self.special_tokens]))
+                found_at = pattern.search(str)
+                if found_at is not None:
+                    start = found_at.start()
+                    end = found_at.end()
+                    for ele in self._encode_chunk(str[:start]):
+                        yield ele
+                    yield(self.vocab_inv[str[start: end]])
+                    str = str[end:]
+        res = self.encode(str)
+        for ele in res:
+            yield ele
 
     def decode(self, ids: list[int]) -> str:
         res = b""
