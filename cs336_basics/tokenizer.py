@@ -1,6 +1,8 @@
 import regex as re
 from collections.abc import Iterable
 
+from cs336_basics.utils import GPT_PAT
+
 class Tokenizer:
     def __init__(self, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], special_tokens: list[str] | None = None):
         self.vocab = vocab
@@ -78,8 +80,7 @@ class Tokenizer:
 
     def _encode_chunk(self, chunk: str) -> list[int]:
         res = []
-        PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-        for m in re.finditer(PAT, chunk):
+        for m in re.finditer(GPT_PAT, chunk):
             word = m.group()
             res.extend(self._encode_word(word))
         return res
@@ -108,16 +109,23 @@ class Tokenizer:
         str = ""
         for s in iterable:
             str += s
-            if self.special_tokens is not None and len(str) % self.mini_chunk_size == 0:
-                pattern = re.compile('|'.join([re.escape(token) for token in self.special_tokens]))
-                found_at = pattern.search(str)
-                if found_at is not None:
-                    start = found_at.start()
-                    end = found_at.end()
-                    for ele in self._encode_chunk(str[:start]):
-                        yield ele
-                    yield(self.vocab_inv[str[start: end]])
-                    str = str[end:]
+            if len(str) < 2:
+                continue
+            flag = True
+            if self.special_tokens is not None:
+                for spe in self.special_tokens:
+                    for l in range(min(len(spe), len(str))):
+                        if str[-l:] == spe[:l]:
+                            flag = False
+                            break
+                    if not flag:
+                        break
+            if flag and re.match(r"\S", str[-2]) is not None and re.match(r"\s", str[-1]) is not None:
+                chunk = str[:-1]
+                res = self.encode(chunk)
+                for ele in res:
+                    yield ele
+                str = str[-1]
         res = self.encode(str)
         for ele in res:
             yield ele
