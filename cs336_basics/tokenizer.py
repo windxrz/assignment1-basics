@@ -7,6 +7,10 @@ class Tokenizer:
     def __init__(self, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], special_tokens: list[str] | None = None):
         self.vocab = vocab
         self.merges = merges
+        self.merge_priority = {}
+        for i, ele in enumerate(merges):
+            self.merge_priority[ele] = i
+        self.MAX_MERGE_SIZE = len(merges) + 100
         self.special_tokens = None
         self.special_tokens_bytes = None
         if special_tokens is not None:
@@ -62,17 +66,28 @@ class Tokenizer:
     def _encode_word(self, word: str) -> list[int]:
         word_byte = word.encode("utf8")
         tmp = tuple([word_byte[i: i+1] for i in range(len(word_byte))])
-        for (token1, token2) in self.merges:
-            i = 0
-            res = []
-            while i < len(tmp):
-                if i < len(tmp) - 1 and tmp[i] == token1 and tmp[i + 1] == token2:
-                    res.append(tmp[i] + tmp[i + 1])
-                    i += 2
-                else:
-                    res.append(tmp[i])
-                    i += 1
-            tmp = tuple(res)
+        while True:
+            if len(tmp) == 1:
+                break
+            priority = self.MAX_MERGE_SIZE
+            pos = []
+            for i in range(len(tmp) - 1):
+                tp = (tmp[i], tmp[i + 1])
+                if tp in self.merge_priority:
+                    if self.merge_priority[tp] < priority:
+                        priority = self.merge_priority[tp]
+                        pos = [i]
+                    elif self.merge_priority == priority and i != pos[-1] + 1:
+                        pos.append(i)
+            if len(pos) == 0:
+                break
+            combined = tuple([])
+            last = 0
+            for p in pos:
+                combined += tmp[last: p] + (tmp[p] + tmp[p + 1],)
+                last = p + 2
+            combined += tmp[last:]
+            tmp = combined
         res = []
         for ele in tmp:
             res.append(self.vocab_inv[ele])
