@@ -64,8 +64,6 @@ def pre_tokenization(chunk, special_tokens):
     for chunk_small in re.split('|'.join([re.escape(token) for token in special_tokens]), chunk):
         PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
         for match in re.finditer(PAT, chunk_small):
-            if len(chunk_small) < 1:
-                print("match:", match)
             res = match.group().encode("utf8")
             tmp = tuple([res[i: i+1] for i in range(len(res))])
             counter[tmp] += 1

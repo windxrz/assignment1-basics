@@ -4,7 +4,7 @@ import pickle as pkl
 
 import os
 
-from cs336_basics.bpe import run_train_bpe
+from cs336_basics.train_bpe import run_train_bpe
 
 
 def train_bpe(dataset, vocab_size=1000):    
