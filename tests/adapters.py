@@ -661,30 +661,26 @@ def BPE_update(vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], count
     l = list(counter.keys())
     
     for key in l:
-        count = counter[key]
         tmp = []
         i = 0
         while i < len(key):
             if i + 1 < len(key) and key[i] == new_token_1 and key[i + 1] == new_token_2:
                 tmp.append(new_token_1 + new_token_2)
-                if i >= 1:
-                    counter_tuple[(key[i - 1], key[i])] -= count
-                    counter_tuple[(key[i - 1], new_token)] += count
-                if i + 2 < len(key):
-                    counter_tuple[(key[i + 1], key[i + 2])] -= count
-                    counter_tuple[(new_token, key[i + 2])] += count
                 i += 2
             else:
                 tmp.append(key[i])
                 i += 1
         tmp = tuple(tmp)
         if key != tmp:
-            counter[tmp] = counter.pop(key)
+            count = counter.pop(key)
+            counter[tmp] = count
+            for i in range(len(tmp) - 1):
+                counter_tuple[(tmp[i], tmp[i + 1])] += count
+            for i in range(len(key) - 1):
+                counter_tuple[(key[i], key[i + 1])] -= count
 
-    counter_tuple.pop((new_token_1, new_token_2))
-        
     return vocab, merges, counter, counter_tuple
-    
+
 
 def counter_file_chunk(input_path, start, end, special_tokens):
     with open(input_path, "rb") as f:
