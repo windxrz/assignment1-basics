@@ -9,6 +9,8 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+import multiprocessing as mp
+
 from collections import Counter
 
 import regex as re
@@ -636,40 +638,64 @@ def initialize_vocab(special_tokens_bytes: list[bytes]) -> dict[int, bytes]:
     return vocab
 
 
-def BPE_update(vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], counter: Counter):
-    counter_tuple = Counter()
-    for tp in counter:
-        num = counter[tp]
-        for i in range(len(tp) - 1):
-            counter_tuple[(tp[i], tp[i + 1])] += num
-    to_sort = [(counter_tuple[key], key[0], key[1]) for key in counter_tuple]
-    to_sort = sorted(to_sort)[::-1]
+def BPE_update(vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], counter, counter_tuple: Counter | None):
+    if counter_tuple is None:
+        counter_tuple = Counter()
+        for tp in counter:
+            num = counter[tp]
+            for i in range(len(tp) - 1):
+                counter_tuple[(tp[i], tp[i + 1])] += num
     
-    new_token_1 = to_sort[0][1]
-    new_token_2 = to_sort[0][2]
+    key_idx = None
+    for key in counter_tuple.keys():
+        if key_idx is None or (counter_tuple[key], key[0], key[1]) > (counter_tuple[key_idx], key_idx[0], key_idx[1]):
+            key_idx = key
     
+    new_token_1 = key_idx[0]
+    new_token_2 = key_idx[1]
     new_token = new_token_1 + new_token_2
 
     vocab[len(vocab)] = new_token
     merges.append((new_token_1, new_token_2))
-
-    counter_new = Counter()
     
-    for key in counter:
+    l = list(counter.keys())
+    
+    for key in l:
+        count = counter[key]
         tmp = []
         i = 0
         while i < len(key):
             if i + 1 < len(key) and key[i] == new_token_1 and key[i + 1] == new_token_2:
                 tmp.append(new_token_1 + new_token_2)
+                if i >= 1:
+                    counter_tuple[(key[i - 1], key[i])] -= count
+                    counter_tuple[(key[i - 1], new_token)] += count
+                if i + 2 < len(key):
+                    counter_tuple[(key[i + 1], key[i + 2])] -= count
+                    counter_tuple[(new_token, key[i + 2])] += count
                 i += 2
             else:
                 tmp.append(key[i])
                 i += 1
         tmp = tuple(tmp)
-        counter_new[tmp] = counter[key]
+        if key != tmp:
+            counter[tmp] = counter.pop(key)
+
+    counter_tuple.pop((new_token_1, new_token_2))
         
-    return vocab, merges, counter_new
+    return vocab, merges, counter, counter_tuple
     
+
+def counter_file_chunk(input_path, start, end, special_tokens):
+    with open(input_path, "rb") as f:
+        f.seek(start)
+        chunk = f.read(end - start).decode("utf-8", errors="ignore")
+        # Run pre-tokenization on your chunk and store the counts for each pre-token
+        counter = pre_tokenization(chunk, special_tokens)
+        f.close()
+
+    return counter
+
 
 def run_train_bpe(
     input_path: str | os.PathLike,
@@ -708,24 +734,32 @@ def run_train_bpe(
     with open(input_path, "rb") as f:
         num_processes = 4
         boundaries = find_chunk_boundaries(f, num_processes, special_tokens_byte)
-
-        # The following is a serial implementation, but you can parallelize this
-        # by sending each start/end pair to a set of processes.
-        counter = Counter()
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
-            f.seek(start)
-            chunk = f.read(end - start).decode("utf-8", errors="ignore")
-            # Run pre-tokenization on your chunk and store the counts for each pre-token
-            counter_tmp = pre_tokenization(chunk, special_tokens)
-            counter.update(counter_tmp)
-    
+        
         f.close()
+        
+    num_processes = len(boundaries) - 1
+
+
+    tasks = []
+
+    for i in range(num_processes):
+        start = boundaries[i]
+        end = boundaries[i + 1]
+        tasks.append([input_path, start, end, special_tokens])
+    
+    with mp.Pool(processes = num_processes) as pool:
+        partial_counters = pool.starmap(counter_file_chunk, tasks)
+
+    counter = Counter()
+    for p_c in partial_counters:
+        counter.update(p_c)
     
     merges = []
     
     total = vocab_size - len(vocab)
     
+    counter_tuple = None
     for _ in range(total):
-        vocab, merges, counter = BPE_update(vocab, merges, counter)
+        vocab, merges, counter, counter_tuple = BPE_update(vocab, merges, counter, counter_tuple)
     
     return (vocab, merges)
