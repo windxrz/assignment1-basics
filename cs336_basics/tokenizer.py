@@ -27,7 +27,7 @@ class Tokenizer:
         for k, v in self.vocab.items():
             self.vocab_inv[v] = k
         
-        self.mini_chunk_size = 4096
+        self.mini_chunk_size = 40960
 
     def from_files(self, vocab_filepath, merges_filepath, special_tokens=None):
         with open(vocab_filepath, "rb") as f:
@@ -98,7 +98,7 @@ class Tokenizer:
         str = ""
         for s in iterable:
             str += s
-            if len(str) < 2:
+            if len(str) < self.mini_chunk_size:
                 continue
             flag = True
             if self.special_tokens is not None:
@@ -109,12 +109,18 @@ class Tokenizer:
                             break
                     if not flag:
                         break
-            if flag and re.match(r"\S", str[-2]) is not None and re.match(r"\s", str[-1]) is not None:
-                chunk = str[:-1]
-                res = self.encode(chunk)
-                for ele in res:
-                    yield ele
-                str = str[-1]
+            if not flag:
+                continue
+            str = str[::-1]
+            loc = re.search(r"\s\S", str)
+            if loc is None:
+                continue
+            loc = loc.start()
+            chunk = str[loc + 1:][::-1]
+            str = str[:loc + 1][::-1]
+            res = self.encode(chunk)
+            for ele in res:
+                yield ele
         res = self.encode(str)
         for ele in res:
             yield ele
