@@ -8,11 +8,15 @@ from cs336_basics.train_bpe import run_train_bpe
 
 
 def train_bpe(dataset, vocab_size, special_tokens):    
+    if not os.path.exists("output"):
+        os.mkdir("output")
+
     output_filename = os.path.join("output", f"{dataset}_vocab_size_{vocab_size}_BPE.pkl")
-    
+
     if not os.path.exists(output_filename):
-    # if True:
         input_path = os.path.join("data", dataset)
+        if not os.path.exists(input_path):
+            return {}, [], [], 0
         start_time = time.time()
         vocab, merges = run_train_bpe(
             input_path=input_path,
@@ -43,7 +47,9 @@ def train_bpe(dataset, vocab_size, special_tokens):
 
 if __name__ == "__main__":
     special_tokens = ["<|endoftext|>"]
+    vocab, merges, special_tokens, training_time = train_bpe("corpus.en", 500, special_tokens)
     vocab, merges, special_tokens, training_time = train_bpe("TinyStoriesV2-GPT4-train.txt", 10000, special_tokens)
+    vocab, merges, special_tokens, training_time = train_bpe("owt_train.txt", 32000, special_tokens)
     tmp = [(-len(ele), ele) for ele in vocab.values()]
     tmp = sorted(tmp)
     print(tmp[:10], special_tokens, training_time)

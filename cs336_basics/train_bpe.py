@@ -9,6 +9,7 @@ import multiprocessing as mp
 from collections import Counter
 
 import regex as re
+from tqdm import tqdm
 
 from cs336_basics.utils import GPT_PAT
 
@@ -81,19 +82,12 @@ def initialize_vocab(special_tokens_bytes: list[bytes]) -> dict[int, bytes]:
     return vocab
 
 
-def BPE_update(vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], counter, counter_tuple: Counter | None):
-    if counter_tuple is None:
-        counter_tuple = Counter()
-        for tp in counter:
-            num = counter[tp]
-            for i in range(len(tp) - 1):
-                counter_tuple[(tp[i], tp[i + 1])] += num
-    
+def BPE_update(vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], counter, counter_tuple: Counter, dict_tp_word: dict[tuple[bytes, bytes], set[bytes]]):
     key_idx = None
     for key in counter_tuple.keys():
         if key_idx is None or (counter_tuple[key], key[0], key[1]) > (counter_tuple[key_idx], key_idx[0], key_idx[1]):
             key_idx = key
-    
+
     new_token_1 = key_idx[0]
     new_token_2 = key_idx[1]
     new_token = new_token_1 + new_token_2
@@ -101,8 +95,10 @@ def BPE_update(vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], count
     vocab[len(vocab)] = new_token
     merges.append((new_token_1, new_token_2))
     
-    l = list(counter.keys())
+    token_tuple = (new_token_1, new_token_2)
     
+    l = list(dict_tp_word[token_tuple])
+
     for key in l:
         tmp = []
         i = 0
@@ -114,15 +110,20 @@ def BPE_update(vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], count
                 tmp.append(key[i])
                 i += 1
         tmp = tuple(tmp)
-        if key != tmp:
-            count = counter.pop(key)
-            counter[tmp] = count
-            for i in range(len(tmp) - 1):
-                counter_tuple[(tmp[i], tmp[i + 1])] += count
-            for i in range(len(key) - 1):
-                counter_tuple[(key[i], key[i + 1])] -= count
-
-    return vocab, merges, counter, counter_tuple
+        if key not in counter:
+            continue
+        count = counter.pop(key)
+        counter[tmp] = count
+        for i in range(len(key) - 1):
+            counter_tuple[(key[i], key[i + 1])] -= count
+            dict_tp_word[(key[i], key[i + 1])].discard(key)
+        for i in range(len(tmp) - 1):
+            counter_tuple[(tmp[i], tmp[i + 1])] += count
+            if (tmp[i], tmp[i + 1]) in dict_tp_word:
+                dict_tp_word[(tmp[i], tmp[i + 1])].add(tmp)
+            else:
+                dict_tp_word[(tmp[i], tmp[i + 1])] = set((tmp,))
+    del dict_tp_word[token_tuple]
 
 
 def counter_file_chunk(input_path, start, end, special_tokens):
@@ -167,7 +168,7 @@ def run_train_bpe(
     vocab = initialize_vocab(special_tokens_byte)
 
     with open(input_path, "rb") as f:
-        num_processes = 4
+        num_processes = 8
         boundaries = find_chunk_boundaries(f, num_processes, special_tokens_byte)
         f.close()
 
@@ -191,8 +192,19 @@ def run_train_bpe(
     
     total = vocab_size - len(vocab)
     
-    counter_tuple = None
-    for _ in range(total):
-        vocab, merges, counter, counter_tuple = BPE_update(vocab, merges, counter, counter_tuple)
+    counter_tuple = Counter()
+    dict_tp_word = {}
+    for tp in counter:
+        num = counter[tp]
+        for i in range(len(tp) - 1):
+            token = (tp[i], tp[i + 1])
+            counter_tuple[token] += num
+            if token in dict_tp_word:
+                dict_tp_word[token].add(tp)
+            else:
+                dict_tp_word[token] = set((tp,))
+
+    for _ in tqdm(range(total)):
+        BPE_update(vocab, merges, counter, counter_tuple, dict_tp_word)
     
     return (vocab, merges)
