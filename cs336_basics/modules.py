@@ -4,6 +4,13 @@ import math
 from einops import einsum, rearrange, reduce, repeat
 
 
+def softmax(x: torch.Tensor, i: int) -> torch.Tensor:
+    x = x - torch.max(x, dim=i, keepdim=True).values
+    x = torch.exp(x)
+    x = x / torch.sum(x, dim=i, keepdim=True)
+    return x
+
+
 class Linear(torch.nn.Module):
     def __init__(self,
                  in_features: int,
