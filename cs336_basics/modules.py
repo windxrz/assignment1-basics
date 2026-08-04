@@ -1,7 +1,7 @@
 import torch
 import math
 
-from einops import einsum, rearrange, reduce
+from einops import einsum, rearrange, reduce, repeat
 
 
 class Linear(torch.nn.Module):
@@ -83,4 +83,25 @@ class FFNSwiGLU(torch.nn.Module):
         x1 = self._SiLU(self.w1(x))
         x2 = self.w3(x)
         res = self.w2(einsum(x1, x2, "... d_ff, ... d_ff -> ... d_ff"))
+        return res
+
+
+class RotaryPositionalEmbedding(torch.nn.Module):
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
+        super().__init__()
+        idx_i = torch.arange(0.0, max_seq_len).to(device)
+        idx_k = torch.pow(theta, -torch.arange(0.0, d_k // 2) * 2 / d_k).to(device)
+        thetas = einsum(idx_i, idx_k, "l, d_k -> l d_k")
+        self.register_buffer("sin_value", torch.sin(thetas), persistent=False)
+        self.register_buffer("cos_value", torch.cos(thetas), persistent=False)
+        print("cos value shape", self.cos_value.shape)
+    
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+        cos = self.cos_value[token_positions]
+        sin = self.sin_value[token_positions]
+        x_even = x[..., ::2]
+        x_odd = x[..., 1::2]
+        res_even = einsum(x_even, cos, "... d_k_2, ... d_k_2 -> ... d_k_2") - einsum(x_odd, sin, "... d_k_2, ... d_k_2 -> ... d_k_2")
+        res_odd = einsum(x_even, sin, "... d_k_2, ... d_k_2 -> ... d_k_2") + einsum(x_odd, cos, "... d_k_2, ... d_k_2 -> ... d_k_2")
+        res = rearrange([res_even, res_odd], "pair ... d_k_2 -> ... (d_k_2 pair)")
         return res
