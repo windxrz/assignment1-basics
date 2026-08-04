@@ -126,7 +126,7 @@ class RotaryPositionalEmbedding(torch.nn.Module):
 
 
 class MultiHeadSelfAttention(torch.nn.Module):
-    def __init__(self, d_model: int, num_heads: int, max_seq_len: int = 10000, theta: float | None = None, dtype=None, device=None):
+    def __init__(self, d_model: int, num_heads: int, max_seq_len: int = 10000, theta: float | None = None, device=None, dtype=None):
         super().__init__()
         self.num_heads = num_heads
         self.d_k = d_model // num_heads
@@ -166,10 +166,10 @@ class MultiHeadSelfAttention(torch.nn.Module):
 
 class TransformerBlock(torch.nn.Module):
     def __init__(self, d_model: int, d_ff: int, num_heads: int,
-                 max_seq_len: int = 10000, theta: float | None = None,
-                 eps: float = 1e-5, dtype=None, device=None):
+                 max_seq_len: int = 10000, rope_theta: float | None = None,
+                 eps: float = 1e-5, device=None, dtype=None):
         super().__init__()
-        self.attn = MultiHeadSelfAttention(d_model, num_heads, max_seq_len, theta, device=device, dtype=dtype)
+        self.attn = MultiHeadSelfAttention(d_model, num_heads, max_seq_len, rope_theta, device=device, dtype=dtype)
         self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
         self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
         self.ffn = FFNSwiGLU(d_model, d_ff, device=device, dtype=dtype)
@@ -178,3 +178,26 @@ class TransformerBlock(torch.nn.Module):
         x = x + self.attn(self.ln1(x))
         x = x + self.ffn(self.ln2(x))
         return x
+
+
+class TransformerLM(torch.nn.Module):
+    def __init__(self, d_model: int, d_ff: int, num_heads: int,
+                 context_length: int, vocab_size: int, num_layers: int,
+                 rope_theta: float | None = None, eps: float = 1e-5, device=None, dtype=None):
+        super().__init__()
+        self.token_embeddings = Embedding(vocab_size, d_model, device=device, dtype=dtype)
+        self.layers = [
+            TransformerBlock(d_model, d_ff, num_heads, context_length, rope_theta, eps, device=device, dtype=dtype)
+            for _ in range(num_layers)
+        ]
+        self.layers = torch.nn.ModuleList(self.layers)
+        self.ln_final = RMSNorm(d_model, eps, device=device, dtype=dtype)
+        self.lm_head = Linear(d_model, vocab_size, device=device, dtype=dtype)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        emb = self.token_embeddings(x)
+        for block in self.layers:
+            emb = block(emb)
+        res = self.ln_final(emb)
+        res = self.lm_head(res)
+        return res
