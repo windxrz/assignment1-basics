@@ -134,7 +134,7 @@ class MultiHeadSelfAttention(torch.nn.Module):
         self.q_proj = Linear(d_model, d_model, device, dtype)
         self.k_proj = Linear(d_model, d_model, device, dtype)
         self.v_proj = Linear(d_model, d_model, device, dtype)
-        self.o_proj = Linear(d_model, d_model, device, dtype)
+        self.output_proj = Linear(d_model, d_model, device, dtype)
 
         mask = torch.tril(torch.ones(max_seq_len, max_seq_len), diagonal=0).bool()
         self.register_buffer("mask", mask, persistent=False)
@@ -153,10 +153,28 @@ class MultiHeadSelfAttention(torch.nn.Module):
         K = rearrange(K, "... seq_len (num_head d_k) -> ... num_head seq_len d_k", num_head = self.num_heads)
 
         if self.theta is not None:
+            if token_positions is None:
+                token_positions = torch.arange(0, seq_len, dtype=torch.int)
             Q = self.rope(Q, token_positions)
             K = self.rope(K, token_positions)
         V = rearrange(V, "... seq_len (num_head d_v) -> ... num_head seq_len d_v", num_head = self.num_heads)
         res = scaled_dot_product_attention(Q, K, V, mask)
         res = rearrange(res, "... num_head seq_len d_v -> ... seq_len (num_head d_v)")
-        res = self.o_proj(res)
+        res = self.output_proj(res)
         return res
+
+
+class TransformerBlock(torch.nn.Module):
+    def __init__(self, d_model: int, d_ff: int, num_heads: int,
+                 max_seq_len: int = 10000, theta: float | None = None,
+                 eps: float = 1e-5, dtype=None, device=None):
+        super().__init__()
+        self.attn = MultiHeadSelfAttention(d_model, num_heads, max_seq_len, theta, device=device, dtype=dtype)
+        self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.ffn = FFNSwiGLU(d_model, d_ff, device=device, dtype=dtype)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x + self.attn(self.ln1(x))
+        x = x + self.ffn(self.ln2(x))
+        return x

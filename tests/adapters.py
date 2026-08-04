@@ -11,8 +11,10 @@ from torch import Tensor
 
 from cs336_basics.train_bpe import run_train_bpe as train_bpe
 from cs336_basics.tokenizer import Tokenizer
-from cs336_basics.modules import Linear, Embedding, RMSNorm, FFNSwiGLU, RotaryPositionalEmbedding, MultiHeadSelfAttention
+from cs336_basics.modules import Linear, Embedding, RMSNorm, FFNSwiGLU, RotaryPositionalEmbedding
+from cs336_basics.modules import  MultiHeadSelfAttention, TransformerBlock
 from cs336_basics.modules import softmax, scaled_dot_product_attention
+
 
 def run_linear(
     d_in: int,
@@ -152,7 +154,7 @@ def run_multihead_self_attention(
     attention.q_proj.weight.data = q_proj_weight
     attention.k_proj.weight.data = k_proj_weight
     attention.v_proj.weight.data = v_proj_weight
-    attention.o_proj.weight.data = o_proj_weight
+    attention.output_proj.weight.data = o_proj_weight
     return attention(in_features)
 
 
@@ -197,7 +199,7 @@ def run_multihead_self_attention_with_rope(
     attention.q_proj.weight.data = q_proj_weight
     attention.k_proj.weight.data = k_proj_weight
     attention.v_proj.weight.data = v_proj_weight
-    attention.o_proj.weight.data = o_proj_weight
+    attention.output_proj.weight.data = o_proj_weight
     return attention(in_features, token_positions)
 
 
@@ -294,7 +296,9 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    transformer_block = TransformerBlock(d_model, d_ff, num_heads, max_seq_len, theta)
+    transformer_block.load_state_dict(weights)
+    return transformer_block(in_features)
 
 
 def run_transformer_lm(
