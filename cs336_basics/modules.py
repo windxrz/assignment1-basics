@@ -113,7 +113,6 @@ class RotaryPositionalEmbedding(torch.nn.Module):
         thetas = einsum(idx_i, idx_k, "l, d_k -> l d_k")
         self.register_buffer("sin_value", torch.sin(thetas), persistent=False)
         self.register_buffer("cos_value", torch.cos(thetas), persistent=False)
-        print("cos value shape", self.cos_value.shape)
     
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
         cos = self.cos_value[token_positions]
@@ -123,4 +122,41 @@ class RotaryPositionalEmbedding(torch.nn.Module):
         res_even = einsum(x_even, cos, "... d_k_2, ... d_k_2 -> ... d_k_2") - einsum(x_odd, sin, "... d_k_2, ... d_k_2 -> ... d_k_2")
         res_odd = einsum(x_even, sin, "... d_k_2, ... d_k_2 -> ... d_k_2") + einsum(x_odd, cos, "... d_k_2, ... d_k_2 -> ... d_k_2")
         res = rearrange([res_even, res_odd], "pair ... d_k_2 -> ... (d_k_2 pair)")
+        return res
+
+
+class MultiHeadSelfAttention(torch.nn.Module):
+    def __init__(self, d_model: int, num_heads: int, max_seq_len: int = 10000, theta: float | None = None, dtype=None, device=None):
+        super().__init__()
+        self.num_heads = num_heads
+        self.d_k = d_model // num_heads
+        self.d_v = d_model // num_heads
+        self.q_proj = Linear(d_model, d_model, device, dtype)
+        self.k_proj = Linear(d_model, d_model, device, dtype)
+        self.v_proj = Linear(d_model, d_model, device, dtype)
+        self.o_proj = Linear(d_model, d_model, device, dtype)
+
+        mask = torch.tril(torch.ones(max_seq_len, max_seq_len), diagonal=0).bool()
+        self.register_buffer("mask", mask, persistent=False)
+
+        self.theta = theta
+        if theta is not None:
+            self.rope = RotaryPositionalEmbedding(theta, d_model // num_heads, max_seq_len, device)
+    
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
+        Q = self.q_proj(x)
+        K = self.k_proj(x)
+        V = self.v_proj(x)
+        seq_len = x.shape[-2]
+        mask = self.mask[:seq_len, :seq_len]
+        Q = rearrange(Q, "... seq_len (num_head d_k) -> ... num_head seq_len d_k", num_head = self.num_heads)
+        K = rearrange(K, "... seq_len (num_head d_k) -> ... num_head seq_len d_k", num_head = self.num_heads)
+
+        if self.theta is not None:
+            Q = self.rope(Q, token_positions)
+            K = self.rope(K, token_positions)
+        V = rearrange(V, "... seq_len (num_head d_v) -> ... num_head seq_len d_v", num_head = self.num_heads)
+        res = scaled_dot_product_attention(Q, K, V, mask)
+        res = rearrange(res, "... num_head seq_len d_v -> ... seq_len (num_head d_v)")
+        res = self.o_proj(res)
         return res
