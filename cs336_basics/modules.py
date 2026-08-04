@@ -1,5 +1,8 @@
 import torch
 import math
+import numpy.typing as npt
+from jaxtyping import Bool, Float, Int
+from torch import Tensor
 
 from einops import einsum, rearrange, reduce, repeat
 
@@ -9,6 +12,15 @@ def softmax(x: torch.Tensor, i: int) -> torch.Tensor:
     x = torch.exp(x)
     x = x / torch.sum(x, dim=i, keepdim=True)
     return x
+
+
+def scaled_dot_product_attention(Q, K, V, mask = None):
+    mat = einsum(Q, K, "... queries d_k, ... keys d_k -> ... queries keys") / math.sqrt(Q.shape[-1])
+    if mask is not None:
+        mat = mat.masked_fill(~mask, -torch.inf)
+    prob = softmax(mat, -1)
+    res = einsum(prob, V, "... queries keys, ... keys d_v -> ... queries d_v")
+    return res
 
 
 class Linear(torch.nn.Module):
