@@ -23,6 +23,16 @@ def scaled_dot_product_attention(Q, K, V, mask = None):
     return res
 
 
+def cross_entropy_loss(inputs: Float[Tensor, " batch_size vocab_size"],
+                       targets: Int[Tensor, " batch_size"]) -> Float[Tensor, ""]:
+    inputs = inputs - torch.max(inputs, dim=-1, keepdim=True).values
+    targets = rearrange(targets, "batch_size -> batch_size 1")
+    sum = rearrange(torch.log(reduce(torch.exp(inputs), "... vocab_size -> ...", "sum")), "batch_size -> batch_size 1")
+    losses = inputs - sum
+    res = torch.gather(losses, dim=1, index=targets)
+    return -torch.mean(res)
+
+
 class Linear(torch.nn.Module):
     def __init__(self,
                  in_features: int,
@@ -106,6 +116,9 @@ class FFNSwiGLU(torch.nn.Module):
 
 
 class RotaryPositionalEmbedding(torch.nn.Module):
+    sin_value: torch.Tensor
+    cos_value: torch.Tensor
+
     def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
         super().__init__()
         idx_i = torch.arange(0.0, max_seq_len).to(device)
@@ -126,6 +139,8 @@ class RotaryPositionalEmbedding(torch.nn.Module):
 
 
 class MultiHeadSelfAttention(torch.nn.Module):
+    mask: torch.Tensor
+
     def __init__(self, d_model: int, num_heads: int, max_seq_len: int = 10000, theta: float | None = None, device=None, dtype=None):
         super().__init__()
         self.num_heads = num_heads
