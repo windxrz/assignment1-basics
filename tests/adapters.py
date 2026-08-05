@@ -14,6 +14,7 @@ from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.modules import Linear, Embedding, RMSNorm, FFNSwiGLU, RotaryPositionalEmbedding
 from cs336_basics.modules import  MultiHeadSelfAttention, TransformerBlock, TransformerLM
 from cs336_basics.modules import softmax, scaled_dot_product_attention, cross_entropy_loss
+from cs336_basics.modules import AdamW
 
 
 def run_linear(
@@ -497,7 +498,7 @@ def get_adamw_cls() -> Any:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
-    raise NotImplementedError
+    return AdamW
 
 
 def run_get_lr_cosine_schedule(

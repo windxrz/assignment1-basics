@@ -2,7 +2,9 @@ import torch
 import math
 import numpy.typing as npt
 from jaxtyping import Bool, Float, Int
+from typing import Optional
 from torch import Tensor
+from collections.abc import Callable
 
 from einops import einsum, rearrange, reduce, repeat
 
@@ -216,3 +218,45 @@ class TransformerLM(torch.nn.Module):
         res = self.ln_final(emb)
         res = self.lm_head(res)
         return res
+
+
+class AdamW(torch.optim.Optimizer):
+    def __init__(self, params, lr: float = 1e-3,
+                 betas: tuple[float, float] = (0.9, 0.95),
+                 weight_decay: float = 0.01,
+                 eps: float = 1e-8):
+        defaults = {
+            "lr": lr,
+            "betas": betas,
+            "weight_decay": weight_decay,
+            "eps": eps
+        }
+        super().__init__(params, defaults)
+
+    def step(self, closure: Optional[Callable] = None):
+        loss = None if closure is None else closure()
+        for group in self.param_groups:
+            lr = group["lr"]
+            betas = group["betas"]
+            weight_decay = group["weight_decay"]
+            eps = group["eps"]
+            
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+                state = self.state[p]
+
+                p.data *= (1 - lr * weight_decay)
+
+                t = state.get("t", 1)
+                m = state.get("m", 0)
+                v = state.get("v", 0)
+                lr_t = lr * math.sqrt(1 - math.pow(betas[1], t)) / (1 - math.pow(betas[0], t))
+                grad = p.grad.data
+                m = betas[0] * m + (1 - betas[0]) * grad
+                v = betas[1] * v + (1 - betas[1]) * grad * grad
+                p.data -= lr_t * m / (torch.sqrt(v) + eps)
+                state["t"] = t + 1
+                state["m"] = m
+                state["v"] = v
+        return loss
